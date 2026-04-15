@@ -522,7 +522,7 @@ function analyze(raw, filename) {
     if (!row) return;
     const key = decodeURIComponent(row.dataset.key);
     if (row.dataset.hasfails === 'true') selectFailCmd(key);
-    else jumpToLine(row.dataset.jumpts);
+    else { clearFailNav(); jumpToLine(row.dataset.jumpts); }
   });
 
   const logQRe = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+):\s+\S+_Q:/;
