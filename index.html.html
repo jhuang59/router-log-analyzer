@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Router Log Analyzer</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0f1117; --surface: #181c26; --surface2: #1f2534;
+    --border: #2a3147; --text: #e2e8f0; --muted: #7a8499;
+    --accent: #3b82f6; --success: #22c55e; --warn: #f59e0b;
+    --danger: #ef4444; --mono: 'JetBrains Mono', 'Courier New', monospace;
+    --sans: 'IBM Plex Sans', system-ui, sans-serif;
+  }
+  body { background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 14px; min-height: 100vh; }
+
+  #input-panel { margin: 48px auto; max-width: 600px; }
+  #input-panel h2 { font-size: 16px; font-weight: 500; margin-bottom: 16px; text-align: center; }
+  .tabs { display: flex; border-bottom: 0.5px solid var(--border); margin-bottom: 20px; }
+  .tab { padding: 8px 20px; font-size: 13px; cursor: pointer; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -0.5px; transition: color 0.15s; }
+  .tab.active { color: var(--text); border-bottom-color: var(--accent); }
+  .tab-pane { display: none; }
+  .tab-pane.active { display: block; }
+  #drop-zone {
+    border: 1.5px dashed var(--border); border-radius: 12px;
+    padding: 48px 24px; text-align: center; cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  #drop-zone.drag { border-color: var(--accent); background: rgba(59,130,246,0.06); }
+  #drop-zone .icon { font-size: 32px; margin-bottom: 10px; opacity: 0.5; }
+  #drop-zone p { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  #file-input { display: none; }
+  .btn-upload {
+    display: inline-block; margin-top: 16px; padding: 8px 20px;
+    background: var(--accent); color: #fff; border-radius: 8px;
+    font-size: 13px; font-weight: 500; cursor: pointer; border: none;
+  }
+  #paste-area {
+    width: 100%; height: 220px; background: var(--surface); border: 0.5px solid var(--border);
+    border-radius: 10px; color: var(--text); font-family: var(--mono); font-size: 12px;
+    padding: 12px; resize: vertical; outline: none; line-height: 1.5;
+  }
+  #paste-area:focus { border-color: var(--accent); }
+  #paste-area::placeholder { color: var(--muted); }
+  .btn-analyze {
+    margin-top: 10px; width: 100%; padding: 9px; background: var(--accent); color: #fff;
+    border: none; border-radius: 8px; font-size: 13px; font-weight: 500; cursor: pointer;
+  }
+  .btn-analyze:hover { opacity: 0.9; }
+
+  #result { display: none; max-width: 900px; margin: 0 auto; padding: 24px 16px 60px; }
+
+  .section-title { font-size: 11px; font-weight: 500; letter-spacing: 0.1em; color: var(--muted); text-transform: uppercase; margin: 28px 0 10px; }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 4px; }
+  .card { background: var(--surface); border: 0.5px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+  .card .label { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+  .card .value { font-size: 18px; font-weight: 500; font-family: var(--mono); }
+  .card .sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .ok { color: var(--success); } .warn { color: var(--warn); } .err { color: var(--danger); } .info { color: var(--accent); }
+
+  .badge { display: inline-block; font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 4px; }
+  .badge-ok { background: rgba(34,197,94,0.12); color: var(--success); }
+  .badge-warn { background: rgba(245,158,11,0.12); color: var(--warn); }
+  .badge-err { background: rgba(239,68,68,0.12); color: var(--danger); }
+  .badge-info { background: rgba(59,130,246,0.12); color: var(--accent); }
+
+  #issues-box { display:none; }
+
+  #timeline { background: var(--surface); border: 0.5px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .tl-head { display: grid; grid-template-columns: 20px 180px 1fr 52px 52px; gap: 10px; padding: 7px 16px; border-bottom: 0.5px solid var(--border); }
+  .tl-head span { font-size: 10px; font-weight: 500; letter-spacing: 0.06em; color: var(--muted); text-transform: uppercase; }
+  .tl-row { display: grid; grid-template-columns: 20px 180px 1fr 52px 52px; gap: 10px; padding: 9px 16px; border-bottom: 0.5px solid var(--border); font-size: 12px; align-items: center; }
+  .tl-row:last-child { border-bottom: none; }
+  .tl-row.tl-active { background: rgba(59,130,246,0.08); border-left: 2px solid var(--accent); padding-left: 14px; }
+  .tl-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .tl-cmd { font-family: var(--mono); font-size: 11px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tl-resp { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tl-count { font-family: var(--mono); font-size: 11px; color: var(--muted); text-align: right; }
+  .tl-fails { font-family: var(--mono); font-size: 11px; text-align: right; }
+
+  #fail-nav { display: none; align-items: center; gap: 10px; margin-top: 10px; padding: 10px 14px; background: var(--surface); border: 0.5px solid var(--border); border-radius: 10px; }
+  #fail-nav-cmd { font-family: var(--mono); font-size: 12px; color: var(--text); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #fail-nav-pos { font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .nav-btn { background: var(--surface2); border: 0.5px solid var(--border); color: var(--text); border-radius: 6px; width: 28px; height: 28px; cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .nav-btn:hover { background: var(--border); }
+  .nav-btn:disabled { opacity: 0.3; cursor: default; }
+  .nav-close { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 14px; padding: 0 2px; flex-shrink: 0; }
+  .nav-close:hover { color: var(--text); }
+
+  .signal-bar { display: flex; gap: 3px; align-items: flex-end; height: 18px; }
+  .bar { width: 5px; border-radius: 2px; background: var(--border); }
+
+  #log-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 10px; }
+  #log-header h1 { font-size: 18px; font-weight: 500; }
+  #new-btn { background: var(--surface2); border: 0.5px solid var(--border); color: var(--text); border-radius: 8px; padding: 7px 14px; font-size: 12px; cursor: pointer; }
+  #new-btn:hover { background: var(--surface); }
+
+  #summary-line { font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+
+  .clickable-row { cursor: pointer; transition: background 0.15s; }
+  .clickable-row:hover { background: var(--surface2); }
+
+  #raw-log-section { margin-top: 28px; }
+  #raw-log-toggle { display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; }
+  #raw-log-toggle .arrow { font-size: 11px; color: var(--muted); transition: transform 0.2s; }
+  #raw-log-toggle.open .arrow { transform: rotate(90deg); }
+  #raw-log-wrap { display: none; margin-top: 10px; background: var(--surface); border: 0.5px solid var(--border); border-radius: 10px; overflow-y: auto; max-height: 400px; }
+  #raw-log-wrap.open { display: block; }
+  .log-line { display: block; font-family: var(--mono); font-size: 11px; line-height: 1.7; padding: 0 16px; color: var(--muted); white-space: pre; transition: background 0.2s; }
+  .log-line.q-line { color: var(--text); }
+  .log-line.a-line { color: #5d7a9a; }
+  .log-line.highlight { background: rgba(59,130,246,0.18); color: var(--text); }
+  @keyframes flash { 0%,100% { background: rgba(59,130,246,0.18); } 50% { background: rgba(59,130,246,0.38); } }
+  .log-line.flash { animation: flash 0.5s ease 2; }
+</style>
+</head>
+<body>
+
+<div id="input-panel">
+  <h2>📡 Router Log Analyzer</h2>
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('upload')">Upload file</div>
+    <div class="tab" onclick="switchTab('paste')">Paste log</div>
+  </div>
+  <div id="tab-upload" class="tab-pane active">
+    <div id="drop-zone" onclick="document.getElementById('file-input').click()">
+      <div class="icon">&#8613;</div>
+      <p>Drop a log file here or click to browse</p>
+      <p style="margin-top:4px; font-size:11px;">Supports Quectel AT command logs and standard AT log formats</p>
+      <label class="btn-upload">Choose file</label>
+      <input type="file" id="file-input" accept=".txt,.log,.csv,text/*">
+    </div>
+  </div>
+  <div id="tab-paste" class="tab-pane">
+    <textarea id="paste-area" placeholder="Paste your AT command log here...&#10;&#10;Example:&#10;2026-04-16 02:09:36.381: 4G_MAIN_Q: AT+QENG=&quot;servingcell&quot;&#10;2026-04-16 02:09:36.605: 4G_MAIN_A: +QENG: &quot;servingcell&quot;,..."></textarea>
+    <button class="btn-analyze" onclick="analyzePaste()">Analyze log</button>
+  </div>
+</div>
+
+<div id="result">
+  <div id="log-header">
+    <div>
+      <h1 id="log-title">Log Analysis</h1>
+      <p id="summary-line"></p>
+    </div>
+    <button id="new-btn" onclick="resetUI()">&#8635; New log</button>
+  </div>
+
+  <div class="section-title">Session overview</div>
+  <div class="cards" id="overview-cards"></div>
+
+  <div class="section-title">Signal quality</div>
+  <div class="cards" id="signal-cards"></div>
+
+  <div class="section-title">Event timeline</div>
+  <div id="timeline"></div>
+  <div id="fail-nav">
+    <span id="fail-nav-cmd"></span>
+    <span id="fail-nav-pos"></span>
+    <button class="nav-btn" id="nav-up" onclick="navigateFail(-1)" title="Previous failure">&#8593;</button>
+    <button class="nav-btn" id="nav-down" onclick="navigateFail(1)" title="Next failure">&#8595;</button>
+    <button class="nav-close" onclick="clearFailNav()" title="Clear">&#10005;</button>
+  </div>
+
+  <div id="raw-log-section">
+    <div id="raw-log-toggle" onclick="toggleRawLog()">
+      <span class="section-title" style="margin:0;">Raw log</span>
+      <span class="arrow">&#9654;</span>
+    </div>
+    <div id="raw-log-wrap"><div id="raw-log-content"></div></div>
+  </div>
+</div>
+
+<script>
+const dz = document.getElementById('drop-zone');
+const fi = document.getElementById('file-input');
+let rawLines = [];
+let tsToLineIdx = {};
+let cmdStatsGlobal = {};
+let activeFailKey = null;
+let activeFailIdx = 0;
+
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
+dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('drag'); handleFile(e.dataTransfer.files[0]); });
+fi.addEventListener('change', () => handleFile(fi.files[0]));
+
+function toggleRawLog() {
+  const tog = document.getElementById('raw-log-toggle');
+  const wrap = document.getElementById('raw-log-wrap');
+  tog.classList.toggle('open');
+  wrap.classList.toggle('open');
+}
+
+function jumpToLine(fullTs) {
+  const tog = document.getElementById('raw-log-toggle');
+  const wrap = document.getElementById('raw-log-wrap');
+  if (!wrap.classList.contains('open')) { tog.classList.add('open'); wrap.classList.add('open'); }
+  const idx = tsToLineIdx[fullTs];
+  if (idx === undefined) return;
+  const target = document.getElementById('ll-' + idx);
+  if (!target) return;
+  document.querySelectorAll('.log-line.highlight, .log-line.flash').forEach(el => { el.classList.remove('highlight','flash'); });
+  target.classList.add('highlight','flash');
+  target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  target.addEventListener('animationend', () => target.classList.remove('flash'), { once: true });
+}
+
+function clearFailNav() {
+  activeFailKey = null;
+  activeFailIdx = 0;
+  document.getElementById('fail-nav').style.display = 'none';
+  document.querySelectorAll('.tl-row.tl-active').forEach(r => r.classList.remove('tl-active'));
+  document.querySelectorAll('.log-line.highlight').forEach(r => r.classList.remove('highlight','flash'));
+}
+
+function selectFailCmd(key) {
+  activeFailKey = key;
+  activeFailIdx = 0;
+  renderFailNav();
+}
+
+function navigateFail(dir) {
+  if (!activeFailKey) return;
+  const fails = cmdStatsGlobal[activeFailKey].fails;
+  activeFailIdx = (activeFailIdx + dir + fails.length) % fails.length;
+  renderFailNav();
+}
+
+function renderFailNav() {
+  const s = cmdStatsGlobal[activeFailKey];
+  const fail = s.fails[activeFailIdx];
+  document.getElementById('fail-nav-cmd').textContent = s.cmd;
+  document.getElementById('fail-nav-pos').textContent = `fail ${activeFailIdx + 1} / ${s.fails.length}`;
+  document.getElementById('fail-nav').style.display = 'flex';
+  document.querySelectorAll('.tl-row.tl-active').forEach(r => r.classList.remove('tl-active'));
+  const activeRow = document.querySelector(`.tl-row[data-key="${encodeURIComponent(activeFailKey)}"]`);
+  if (activeRow) activeRow.classList.add('tl-active');
+  jumpToLine(fail.ts);
+}
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', (i === 0) === (tab === 'upload')));
+  document.getElementById('tab-upload').classList.toggle('active', tab === 'upload');
+  document.getElementById('tab-paste').classList.toggle('active', tab === 'paste');
+}
+
+function resetUI() {
+  document.getElementById('input-panel').style.display = '';
+  document.getElementById('result').style.display = 'none';
+  document.getElementById('paste-area').value = '';
+  clearFailNav();
+  fi.value = '';
+}
+
+function analyzePaste() {
+  const text = document.getElementById('paste-area').value.trim();
+  if (!text) { alert('Please paste a log first.'); return; }
+  analyze(text, 'pasted log');
+}
+
+function handleFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => analyze(e.target.result, file.name);
+  reader.readAsText(file);
+}
+
+function parseLogEntries(raw) {
+  const lines = raw.split('\n');
+  const entries = [];
+  let current = null;
+  const lineRe = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+):\s+(\S+)_([QA]):\s*(.*)/;
+
+  for (const line of lines) {
+    const m = line.match(lineRe);
+    if (m) {
+      if (current) entries.push(current);
+      current = { ts: m[1], channel: m[2], dir: m[3], text: m[4].trim(), extra: [] };
+    } else if (current && current.dir === 'A' && line.trim() && line.trim() !== 'OK' && line.trim() !== 'ERROR') {
+      current.extra.push(line.trim());
+    }
+  }
+  if (current) entries.push(current);
+  return entries;
+}
+
+function parseServingCell(resp) {
+  const m = resp.match(/\+QENG: "servingcell","(\w+)","(\w+)","(\w+)",(\d+),(\d+),([0-9A-Fa-f]+),(\d+),(\d+),(\d+),(\d+),(\d+),([0-9A-Fa-f]+),([-\d]+),([-\d]+),([-\d]+),([-\d]+),([-\d]+)/);
+  if (!m) return null;
+  return { state: m[1], rat: m[2], duplex: m[3], mcc: m[4], mnc: m[5], cellId: m[6], pci: m[7], earfcn: m[8], band: m[9], rsrp: parseInt(m[14]), rsrq: parseInt(m[15]), sinr: parseInt(m[16]) };
+}
+
+function parseCSQ(resp) {
+  const m = resp.match(/\+CSQ: (\d+),/);
+  return m ? parseInt(m[1]) : null;
+}
+
+function parseCEREG(resp) {
+  const m = resp.match(/\+CEREG: \d+,(\d+)/);
+  return m ? parseInt(m[1]) : null;
+}
+
+function parseCREG(resp) {
+  const m = resp.match(/\+CREG: \d+,(\d+)/);
+  return m ? parseInt(m[1]) : null;
+}
+
+function parseC5GREG(resp) {
+  const m = resp.match(/\+C5GREG: \d+,(\d+)/);
+  return m ? parseInt(m[1]) : null;
+}
+
+function parseCGACT(resp) {
+  return resp.match(/\+CGACT: 1,1/) ? true : false;
+}
+
+function parseIP(resp) {
+  const m = resp.match(/\+CGPADDR: 1,"([^"]+)"/);
+  return m ? m[1] : null;
+}
+
+function parseQNWINFO(resp) {
+  const m = resp.match(/\+QNWINFO: "([^"]+)","([^"]+)","([^"]+)",(\d+)/);
+  return m ? { type: m[1], plmn: m[2], band: m[3], arfcn: m[4] } : null;
+}
+
+function regStatText(s) {
+  return { 0: 'not registered', 1: 'registered (home)', 2: 'searching', 3: 'denied', 4: 'unknown', 5: 'registered (roaming)' }[s] || 'unknown';
+}
+
+function csqToRSSI(csq) {
+  if (csq === 0) return -113;
+  if (csq === 31) return -51;
+  if (csq === 99) return null;
+  return -113 + (csq * 2);
+}
+
+function tsShort(ts) {
+  return ts ? ts.split(' ')[1].split('.')[0] : '';
+}
+
+function badge(text, type) {
+  return `<span class="badge badge-${type}">${text}</span>`;
+}
+
+function analyze(raw, filename) {
+  rawLines = raw.split('\n');
+  tsToLineIdx = {};
+  const lineRe2 = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+):/;
+  rawLines.forEach((line, i) => {
+    const m = line.match(lineRe2);
+    if (m && tsToLineIdx[m[1]] === undefined) tsToLineIdx[m[1]] = i;
+  });
+
+  const entries = parseLogEntries(raw);
+  if (entries.length === 0) { alert('No recognizable AT command entries found.'); return; }
+
+  const CMD_RULES = {
+    'AT+CEREG?':            { label: 'LTE registration',  skip: false,
+      parse: r => { const m = r.match(/\+CEREG: \d+,(\d+)/); if(!m) return null; const v=parseInt(m[1]); return {val:v, display:regStatText(v)}; },
+      ok: r => r && (r.val===1||r.val===5) },
+    'AT+CREG?':             { label: '2G registration',   skip: true },
+    'AT+C5GREG?':           { label: '5G registration',   skip: true },
+    'AT+CSQ':               { label: 'Signal strength',   skip: false,
+      parse: r => { const m = r.match(/\+CSQ: (\d+),/); if(!m) return null; const v=parseInt(m[1]); return {val:v, display:`CSQ ${v}/31`}; },
+      ok: r => r && r.val!==99 && r.val!==0 },
+    'AT+CGACT?':            { label: 'PDP context',       skip: false,
+      parse: r => { const a=/\+CGACT: 1,1/.test(r); return {val:a, display: a?'active':'inactive'}; },
+      ok: r => r && r.val===true },
+    'AT+CGPADDR=1':         { label: 'IP address',        skip: false,
+      parse: r => { const m = r.match(/\+CGPADDR: 1,"([^"]+)"/); return m?{val:m[1],display:m[1]}:{val:null,display:'no IP'}; },
+      ok: r => r && r.val!==null },
+    'AT+QENG="SERVINGCELL"':{ label: 'Serving cell',      skip: false,
+      parse: r => { const m = r.match(/\+QENG: "servingcell","(\w+)","(\w+)",[^,]+,[^,]+,[^,]+,[^,]+,(\d+),[^,]+,[^,]+,[^,]+,[^,]+,[^,]+,([-\d]+),([-\d]+),([-\d]+)/i); if(!m) return null; return {val:m[1], display:`${m[2]} ${m[1]} PCI ${m[3]} RSRP ${m[4]} dBm`}; },
+      ok: r => r!==null },
+    'AT+QENG="NEIGHBOURCELL"':{ label: 'Neighbour cells', skip: false,
+      parse: r => { const n=(r.match(/\+QENG: "neighbourcell/gi)||[]).length; return {val:n, display:`${n} cell${n!==1?'s':''} visible`}; },
+      ok: r => r && r.val>0 },
+    'AT+QNWINFO':           { label: 'Network info',      skip: false,
+      parse: r => { const m = r.match(/\+QNWINFO: "([^"]+)","([^"]+)","([^"]+)",(\d+)/); return m?{val:true, display:`${m[1]}, ${m[3]}, ARFCN ${m[4]}`}:null; },
+      ok: r => r!==null },
+    'AT+QNETDEVSTATUS?':    { label: 'Net device status', skip: false,
+      parse: r => { const m = r.match(/\+QNETDEVSTATUS: (\d+),(\d+),(\d+),(\d+)/); return m?{val:parseInt(m[2]), display:`${m[1]},${m[2]},${m[3]},${m[4]}`}:null; },
+      ok: r => r && r.val===1 },
+  };
+
+  const cmdStats = {};
+
+  let i = 0;
+  while (i < entries.length) {
+    const e = entries[i];
+    if (e.dir !== 'Q') { i++; continue; }
+    const cmdRaw = e.text;
+    const cmdKey = cmdRaw.toUpperCase();
+    const ans = entries[i+1]?.dir === 'A' ? entries[i+1] : null;
+    const fullResp = ans ? [ans.text, ...ans.extra].join('\n') : '';
+    const respTs = ans ? ans.ts : e.ts;
+    i += ans ? 2 : 1;
+
+    const rule = CMD_RULES[cmdKey];
+    if (!rule || rule.skip) continue;
+
+    const parsed = rule.parse ? rule.parse(fullResp) : null;
+    const isError = /^ERROR$/m.test(fullResp) || (!fullResp && !parsed);
+    const passed = !isError && rule.ok(parsed);
+    const display = parsed ? parsed.display : (isError ? 'ERROR' : '—');
+
+    if (!cmdStats[cmdKey]) cmdStats[cmdKey] = { label: rule.label, cmd: cmdRaw, runs: [], fails: [] };
+    cmdStats[cmdKey].runs.push({ ts: e.ts, respTs, passed, display, fullResp });
+    if (!passed) cmdStats[cmdKey].fails.push({ ts: e.ts, respTs, display, fullResp });
+  }
+
+  if (Object.keys(cmdStats).length === 0) { alert('Could not extract structured data. Check if this is a valid AT command log.'); return; }
+
+  cmdStatsGlobal = cmdStats;
+
+  const allRuns = Object.values(cmdStats).flatMap(s => s.runs);
+  const firstTs = entries[0].ts;
+  const lastTs  = entries[entries.length-1].ts;
+  const durationS = Math.round((new Date(lastTs)-new Date(firstTs))/1000);
+  const totalRuns = allRuns.length;
+  const totalFails = Object.values(cmdStats).reduce((a,s)=>a+s.fails.length,0);
+  const cycles = Math.max(...Object.values(cmdStats).map(s=>s.runs.length));
+
+  const snapshots = [];
+  let snap = {};
+  const polls2 = [];
+  let j = 0;
+  while (j < entries.length) {
+    const e2 = entries[j];
+    if (e2.dir === 'Q') {
+      const ans2 = entries[j+1]?.dir==='A' ? entries[j+1] : null;
+      const fr = ans2 ? [ans2.text,...ans2.extra].join('\n') : '';
+      polls2.push({ts:e2.ts, cmd:e2.text.toUpperCase(), resp:fr});
+      j += ans2?2:1;
+    } else j++;
+  }
+  for (const p of polls2) {
+    if (!snap.ts) snap.ts = p.ts;
+    if (p.cmd.includes('SERVINGCELL')) snap.serving = parseServingCell(p.resp);
+    else if (p.cmd==='AT+CSQ') snap.csq = parseCSQ(p.resp);
+    else if (p.cmd==='AT+CEREG?') snap.cereg = parseCEREG(p.resp);
+    else if (p.cmd==='AT+CGACT?') snap.pdp = parseCGACT(p.resp);
+    else if (p.cmd.startsWith('AT+CGPADDR')) { const ip=parseIP(p.resp); if(ip) snap.ip=ip; }
+    else if (p.cmd==='AT+QNWINFO') snap.nwinfo = parseQNWINFO(p.resp);
+    if (p.cmd==='AT+CGPADDR=1' && snap.cereg!==undefined && snap.csq!==undefined && snap.serving) { snapshots.push({...snap}); snap={}; }
+  }
+  if (snap.cereg!==undefined) snapshots.push({...snap});
+
+  const rsrps = snapshots.filter(s=>s.serving).map(s=>s.serving.rsrp);
+  const avgRsrp = rsrps.length ? Math.round(rsrps.reduce((a,b)=>a+b,0)/rsrps.length) : null;
+  const minRsrp = rsrps.length ? Math.min(...rsrps) : null;
+  const csqs = snapshots.filter(s=>s.csq!=null).map(s=>s.csq);
+  const avgCsq = csqs.length ? Math.round(csqs.reduce((a,b)=>a+b,0)/csqs.length) : null;
+  const nw = snapshots.find(s=>s.nwinfo)?.nwinfo;
+  const serving0 = snapshots.find(s=>s.serving)?.serving;
+  const overallOk = totalFails === 0;
+
+  document.getElementById('log-title').textContent = filename;
+  document.getElementById('summary-line').textContent =
+    `${firstTs.split('.')[0]}  ·  ${cycles} cycles  ·  ${totalRuns} commands  ·  ${durationS}s`;
+
+  const overviewCards = [
+    { label: 'Overall status',  value: overallOk ? 'OK' : `${totalFails} fail${totalFails!==1?'s':''}`, cls: overallOk?'ok':'err' },
+    { label: 'LTE registration',value: snapshots[0]?.cereg!==undefined ? regStatText(snapshots[0].cereg):'—', cls: snapshots[0]?.cereg===1?'ok':'err' },
+    { label: 'PDP context',     value: snapshots[0]?.pdp ? 'Active':'Inactive', cls: snapshots[0]?.pdp?'ok':'err' },
+    { label: 'Network',         value: nw?nw.type:'—', cls:'info' },
+    { label: 'Band',            value: nw?nw.band:'—', cls:'info' },
+    { label: 'Cell state',      value: serving0?serving0.state:'—', cls: serving0?.state==='CONNECT'?'ok':'warn' },
+  ];
+  document.getElementById('overview-cards').innerHTML = overviewCards.map(c=>
+    `<div class="card"><div class="label">${c.label}</div><div class="value ${c.cls}" style="font-size:13px;">${c.value}</div></div>`
+  ).join('');
+
+  const rssiAvg = csqToRSSI(avgCsq);
+  const rsrqS = snapshots.filter(s=>s.serving).map(s=>s.serving.rsrq);
+  const avgRsrq = rsrqS.length ? Math.round(rsrqS.reduce((a,b)=>a+b,0)/rsrqS.length) : null;
+  const sinrS = snapshots.filter(s=>s.serving).map(s=>s.serving.sinr);
+  const avgSinr = sinrS.length ? Math.round(sinrS.reduce((a,b)=>a+b,0)/sinrS.length) : null;
+  const sigCards = [
+    { label:'Avg RSRP', value: avgRsrp!==null?`${avgRsrp} dBm`:'—', sub: avgRsrp>-100?'Good':avgRsrp>-110?'Fair':'Poor', cls: avgRsrp>-100?'ok':avgRsrp>-110?'warn':'err' },
+    { label:'Min RSRP', value: minRsrp!==null?`${minRsrp} dBm`:'—', sub:'worst sample', cls: minRsrp>-100?'ok':minRsrp>-110?'warn':'err' },
+    { label:'Avg RSRQ', value: avgRsrq!==null?`${avgRsrq} dB`:'—',  sub: avgRsrq>-10?'Good':avgRsrq>-15?'Fair':'Poor', cls: avgRsrq>-10?'ok':avgRsrq>-15?'warn':'err' },
+    { label:'Avg SINR', value: avgSinr!==null?`${avgSinr} dB`:'—',  sub:'', cls:'info' },
+    { label:'CSQ avg',  value: avgCsq!==null?`${avgCsq}/31`:'—',    sub: rssiAvg!==null?`≈ ${rssiAvg} dBm`:'', cls: avgCsq>=15?'ok':avgCsq>=10?'warn':'err' },
+  ];
+  document.getElementById('signal-cards').innerHTML = sigCards.map(c=>
+    `<div class="card"><div class="label">${c.label}</div><div class="value ${c.cls}" style="font-size:15px;">${c.value}</div>${c.sub?`<div class="sub">${c.sub}</div>`:''}</div>`
+  ).join('');
+
+  const tlBox = document.getElementById('timeline');
+  activeFailKey = null;
+  document.getElementById('fail-nav').style.display = 'none';
+  tlBox.innerHTML =
+    `<div class="tl-head"><span></span><span>Command</span><span>Last response</span><span style="text-align:right">Runs</span><span style="text-align:right">Fails</span></div>` +
+    Object.entries(cmdStats).map(([key, s]) => {
+      const lastRun = s.runs[s.runs.length - 1];
+      const lastGood = [...s.runs].reverse().find(r => r.passed);
+      const hasFails = s.fails.length > 0;
+      const dotColor = hasFails ? 'var(--danger)' : 'var(--success)';
+      const failCount = hasFails
+        ? `<span class="tl-fails err">${s.fails.length}</span>`
+        : `<span class="tl-fails" style="color:var(--muted)">0</span>`;
+      const respDisplay = lastGood ? lastGood.display : `<span style="color:var(--danger)">${lastRun.display}</span>`;
+      const safeKey = encodeURIComponent(key);
+      const jumpTs = lastGood ? lastGood.ts : lastRun.ts;
+      const title = hasFails ? `Browse ${s.fails.length} failure${s.fails.length!==1?'s':''}` : 'Jump to last response';
+      return `<div class="tl-row clickable-row" data-key="${safeKey}" data-hasfails="${hasFails}" data-jumpts="${jumpTs}" title="${title}">
+        <span><span class="tl-dot" style="background:${dotColor};display:inline-block;margin-top:2px;"></span></span>
+        <span class="tl-cmd">${s.cmd}</span>
+        <span class="tl-resp">${respDisplay}</span>
+        <span class="tl-count">${s.runs.length}</span>
+        ${failCount}
+      </div>`;
+    }).join('');
+
+  tlBox.addEventListener('click', e => {
+    const row = e.target.closest('.tl-row[data-key]');
+    if (!row) return;
+    const key = decodeURIComponent(row.dataset.key);
+    if (row.dataset.hasfails === 'true') selectFailCmd(key);
+    else jumpToLine(row.dataset.jumpts);
+  });
+
+  const logQRe = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+):\s+\S+_Q:/;
+  const logARe = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+):\s+\S+_A:/;
+  document.getElementById('raw-log-content').innerHTML = rawLines.map((line, i) => {
+    const isQ = logQRe.test(line), isA = logARe.test(line);
+    const cls = isQ ? 'q-line' : isA ? 'a-line' : '';
+    const safe = line.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    return `<span class="log-line ${cls}" id="ll-${i}">${safe||' '}</span>`;
+  }).join('');
+
+  document.getElementById('input-panel').style.display = 'none';
+  document.getElementById('result').style.display = 'block';
+}
+
+</script>
+</body>
+</html>
