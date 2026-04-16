@@ -2,7 +2,7 @@
 
 A free, open-source, browser-based tool for parsing and analyzing AT command diagnostic logs from LTE routers and modems. No installation required. Works with Quectel EC21, EC25, and any modem producing standard timestamped AT command logs.
 
-**Live demo:** `https://jhuang59.github.io/router-log-analyzer/`
+**Live demo:** `[https://jhuang59.github.io/router-log-analyzer/](https://jhuang59.github.io/router-log-analyzer/)`
 
 ---
 
